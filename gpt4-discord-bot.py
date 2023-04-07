@@ -68,6 +68,11 @@ class Client(discord.Client):
         input_content = message.content
         print(f"{message.author}: {input_content}")
 
+        # Respond only when the bot is mentioned or a trigger word is detected
+        if not (self.user.mentioned_in(message) or any(
+                trigger_word.lower() in input_content.lower() for trigger_word in trigger_list)):
+            return
+
         if not self.conversation_started:
             self.start_conversation(author.display_name)
             self.conversation_started = True
@@ -80,7 +85,7 @@ class Client(discord.Client):
             await message.channel.typing()
             loading_message = await message.channel.send("Typing...")
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4",
                 messages=self.conversation_history
             )
 
