@@ -1,0 +1,123 @@
+1: import discord
+2: import openai
+3: from dotenv import load_dotenv
+4: from discord import app_commands
+5: from configparser import ConfigParser
+6: import os
+7: import json
+8: 
+9: load_dotenv()
+10: 
+11: config_file = "config.ini"
+12: config = ConfigParser(interpolation=None)
+13: config.read(config_file)
+14: 
+15: SERVER_ID = config["discord"]["server_id"]
+16: DISCORD_API_KEY = os.getenv("BOT_TOKEN")
+17: OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+18: 
+19: GUILD = discord.Object(id=SERVER_ID)
+20: 
+21: HISTORY_LENGTH = config["bot"]["history_length"]
+22: 
+23: ROLE_FILE = config["bot"]["role_file"]
+24: 
+25: with open(ROLE_FILE, "r") as role_file:
+26:     role_data = json.load(role_file)
+27: 
+28: SYSTEM_MESSAGE = role_data["SYSTEM_MESSAGE"]
+29: PROMPT_STRUCTURE = role_data["PROMPT_STRUCTURE"]
+30: CONVERSATION_LEAD_IN = role_data["CONVERSATION_LEAD_IN"]
+31: 
+32: TRIGGER_LIST_FILE = config["bot"]["trigger_list_file"]
+33: 
+34: with open(TRIGGER_LIST_FILE, "r") as trigger_list_file:
+35:     trigger_list = json.load(trigger_list_file)
+36: 
+37: 
+38: def trim_conversation_history(history, max_length=int(HISTORY_LENGTH)):
+39:     if len(history) > max_length + 1:  # Add 1 to account for the system message
+40:         history = [history[0]] + history[-max_length:]  # Keep the system message and last max_length messages
+41:     return history
+42: 
+43: 
+44: class Client(discord.Client):
+45:     def __init__(self, *, intents: discord.Intents):
+46:         super().__init__(intents=intents)
+47:         self.tree = app_commands.CommandTree(self)
+48:         self.conversation_history = []
+49:         self.conversation_started = False
+50: 
+51:     def start_conversation(self, author_display_name):
+52:         self.conversation_history = [{"role": "system",
+53:                                       "content": SYSTEM_MESSAGE}] + CONVERSATION_LEAD_IN
+54: 
+55:     def construct_prompt(self, author, message_content):
+56:         return PROMPT_STRUCTURE.format(user=author, prompt=message_content)
+57: 
+58:     async def setup_hook(self):
+59:         self.tree.copy_global_to(guild=GUILD)
+60:         await self.tree.sync(guild=GUILD)
+61: 
+62:     async def on_message(self, message):
+63:         author = message.author
+64: 
+65:         if message.author == self.user:
+66:             return
+67: 
+68:         input_content = message.content
+69:         print(f"{message.author}: {input_content}")
+70: 
+71:         if not self.conversation_started:
+72:             self.start_conversation(author.display_name)
+73:             self.conversation_started = True
+74: 
+75:         user_prompt = self.construct_prompt(author, input_content)
+76:         self.conversation_history.append({"role": "user", "content": user_prompt})
+77:         self.conversation_history = trim_conversation_history(self.conversation_history)
+78: 
+79:         try:
+80:             await message.channel.typing()
+81:             loading_message = await message.channel.send("Typing...")
+82:             response = openai.ChatCompletion.create(
+83:                 model="gpt-3.5-turbo",
+84:                 messages=self.conversation_history
+85:             )
+86: 
+87:             assistant_response = response["choices"][0]["message"]["content"]
+88:             self.conversation_history.append({"role": "assistant", "content": assistant_response})
+89:             self.conversation_history = trim_conversation_history(self.conversation_history)
+90: 
+91:         except AttributeError:
+92:             assistant_response = "It looks like you might have to update your openai package. You can do that with ```pip install --upgrade openai```"
+93:         except ImportError:
+94:             assistant_response = "You might not have all required packages installed. Make sure you install the openai and discord package"
+95:         except openai.error.AuthenticationError:
+96:             assistant_response = "It looks like you don't have access to the gpt-4 model. Please make sure you have been invited by openai and double check your openai API key and organization ID"
+97:         except openai.error.RateLimitError:
+98:             assistant_response = "Your rate has been limited. This might be because of too many requests or because your rate limit has been reached."
+99:         except openai.error.Timeout:
+100:             assistant_response = "My response is taking too long and I have received a timeout error."
+101:         except openai.error.APIConnectionError:
+102:             assistant_response = "I can't connect to the OpenAI servers at the moment. Please try again later!"
+103: 
+104:         if assistant_response is not None:
+105:             parts = [assistant_response[i:i + 2000] for i in range(0, len(assistant_response), 2000)]
+106:             for index, part in enumerate(parts):
+107:                 try:
+108:                     print(f"GPT: {part}")
+109:                     await loading_message.delete()
+110:                     await message.channel.send(part)
+111:                 except discord.errors.Forbidden:
+112:                     print("GPT: I am not able to send a message. Do I have the correct permissions on your server?")
+113: 
+114: 
+115: gpt4_intents = discord.Intents.default()
+116: gpt4_intents.messages = True
+117: gpt4_intents.message_content = True
+118: client = Client(intents=gpt4_intents)
+119: 
+120: openai.api_key = OPENAI_API_KEY
+121: openai.Model.list()
+122: 
+123: client.run(DISCORD_API_KEY)
