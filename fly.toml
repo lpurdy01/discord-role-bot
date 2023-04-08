@@ -1,0 +1,9 @@
+# fly.toml file generated for fidov1test on 2023-04-06T21:07:19-08:00
+
+app = "fidov1test"
+kill_signal = "SIGINT"
+kill_timeout = 5
+primary_region = "sea"
+processes = []
+
+[env]
