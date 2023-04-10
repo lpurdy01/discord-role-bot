@@ -8,7 +8,7 @@ import json
 
 load_dotenv()
 
-config_file = "bot/config.ini"
+config_file = "dog_bot/config.ini"
 config = ConfigParser(interpolation=None)
 config.read(config_file)
 
