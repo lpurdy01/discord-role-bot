@@ -35,8 +35,8 @@ class Client(discord.Client):
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
         self.conversation_history = []
-        self.conversation_started = False
-        self.agent_chain = None
+        self.conversation_started = True
+        self.agent_chain = init_agent()
 
     def start_conversation(self):
         self.agent_chain = init_agent()
